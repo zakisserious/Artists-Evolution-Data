@@ -1,0 +1,15 @@
+app/page.tsx(3,23): error TS2307: Cannot find module '@/components/SearchBar' or its corresponding type declarations.
+app/page.tsx(4,29): error TS2307: Cannot find module '@/components/PopularityChart' or its corresponding type declarations.
+app/page.tsx(5,23): error TS2307: Cannot find module '@/components/AlbumCard' or its corresponding type declarations.
+app/page.tsx(6,26): error TS2307: Cannot find module '@/components/ui/timeline' or its corresponding type declarations.
+app/page.tsx(7,55): error TS2307: Cannot find module '@/lib/api' or its corresponding type declarations.
+app/page.tsx(38,41): error TS7006: Parameter 'album' implicitly has an 'any' type.
+app/page.tsx(112,42): error TS7006: Parameter 'phase' implicitly has an 'any' type.
+app/page.tsx(112,49): error TS7006: Parameter 'idx' implicitly has an 'any' type.
+components/AlbumCard.tsx(1,23): error TS2307: Cannot find module '@/lib/api' or its corresponding type declarations.
+components/PopularityChart.tsx(3,23): error TS2307: Cannot find module '@/lib/api' or its corresponding type declarations.
+components/PopularityChart.tsx(34,13): error TS2322: Type '(value: number) => [string, string]' is not assignable to type 'Formatter<ValueType, NameType> & ((value: ValueType, name: NameType, item: TooltipPayloadEntry, index: number, payload: TooltipPayload) => ReactNode | [...])'.
+  Type '(value: number) => [string, string]' is not assignable to type 'Formatter<ValueType, NameType>'.
+    Types of parameters 'value' and 'value' are incompatible.
+      Type 'ValueType | undefined' is not assignable to type 'number'.
+        Type 'undefined' is not assignable to type 'number'.

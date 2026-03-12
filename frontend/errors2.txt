@@ -1,0 +1,4 @@
+src/app/page.tsx(3,23): error TS2307: Cannot find module '@/components/SearchBar' or its corresponding type declarations.
+src/app/page.tsx(4,29): error TS2307: Cannot find module '@/components/PopularityChart' or its corresponding type declarations.
+src/app/page.tsx(5,23): error TS2307: Cannot find module '@/components/AlbumCard' or its corresponding type declarations.
+src/app/page.tsx(6,26): error TS2307: Cannot find module '@/components/ui/timeline' or its corresponding type declarations.
