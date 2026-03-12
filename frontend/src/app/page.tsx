@@ -55,9 +55,8 @@ export default function Home() {
     : null;
 
   return (
-    <main className="min-h-screen bg-[#0a0a0f] font-sans selection:bg-indigo-500/40 selection:text-white">
-
-      {/* ── HERO ─────────────────────────────────────────── */}
+    <div className="w-full overflow-hidden relative">
+      <main className="min-h-screen bg-[#0a0a0f] font-sans selection:bg-indigo-500/40 selection:text-white">
       <section className="relative z-50 flex flex-col items-center justify-center min-h-[52vh] px-6 pt-20 pb-24">
         {/* Subtle ambient glow — no purple, just depth */}
         <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-indigo-700/15 blur-[130px] -z-10" />
@@ -234,5 +233,6 @@ export default function Home() {
         </div>
       </footer>
     </main>
+  </div>
   );
 }

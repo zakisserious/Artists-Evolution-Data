@@ -120,8 +120,17 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html, body {
+    background-color: #0a0a0f !important;
+    overflow-x: hidden;
+    position: relative;
+    width: 100%;
+    touch-action: pan-y;
+    -webkit-text-size-adjust: 100%;
+  }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    min-height: 100vh;
   }
   html {
     @apply font-sans;
