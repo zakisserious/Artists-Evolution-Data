@@ -1,0 +1,11 @@
+# Ignore all README files across the project
+README*.md
+**/README*.md
+
+# Common ignores
+node_modules/
+__pycache__/
+.next/
+.env*
+.DS_Store
+*.tsbuildinfo
