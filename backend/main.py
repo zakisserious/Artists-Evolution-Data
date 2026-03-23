@@ -39,7 +39,8 @@ async def analyze_artist(artist: Optional[str] = None, artist_id: Optional[str] 
             
     try:
         from services.deezer import get_artist_image
-        async with httpx.AsyncClient() as client:
+        browser_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        async with httpx.AsyncClient(headers=browser_headers) as client:
             actual_artist_name = None
             
             # 1. Resolve artist name and ID
@@ -97,7 +98,8 @@ async def search_artists_endpoint(q: str):
         return {"artists": []}
     
     try:
-        async with httpx.AsyncClient() as client:
+        browser_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+        async with httpx.AsyncClient(headers=browser_headers) as client:
             from services.musicbrainz import search_artists_list
             results = await search_artists_list(client, q)
             # Add artist images from deezer as an enrichment step
