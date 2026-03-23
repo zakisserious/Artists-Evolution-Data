@@ -10,7 +10,7 @@ BASE_URL = "https://musicbrainz.org/ws/2"
 async def search_artist(client: httpx.AsyncClient, artist_query: str, by_id: bool = False):
     if by_id:
         url = f"{BASE_URL}/artist/{artist_query}"
-        params = {"fmt": "json"}
+        params = {"fmt": "json", "inc": "url-rels"}
         response = await client.get(url, params=params, headers=HEADERS)
         response.raise_for_status()
         return response.json()
@@ -47,7 +47,7 @@ async def search_artists_list(client: httpx.AsyncClient, query: str):
 
 async def fetch_albums(client: httpx.AsyncClient, artist_id: str):
     url = f"{BASE_URL}/release-group"
-    params = {"artist": artist_id, "type": "album", "fmt": "json", "limit": 100}
+    params = {"artist": artist_id, "fmt": "json", "limit": 100}
     response = await client.get(url, params=params, headers=HEADERS)
     response.raise_for_status()
     data = response.json()
@@ -55,13 +55,13 @@ async def fetch_albums(client: httpx.AsyncClient, artist_id: str):
     release_groups = data.get("release-groups", [])
     albums = []
 
-    # Strictly filter: must be primary type "Album" with NO secondary types
-    # that indicate it's not a studio album (no Live, Compilation, Remix, etc.)
+    # Filter: must be primary type "Album" or "EP" with NO secondary types
+    # that indicate it's not standard (no Live, Compilation, Remix, etc.)
     for rg in release_groups:
         primary_type = rg.get("primary-type", "")
         secondary_types = rg.get("secondary-types", [])
 
-        if primary_type != "Album":
+        if primary_type not in ["Album", "EP"]:
             continue
         if any(st in secondary_types for st in ["Compilation", "Live", "Remix", "DJ-mix", "Mixtape/Street"]):
             continue
@@ -85,10 +85,11 @@ async def fetch_albums(client: httpx.AsyncClient, artist_id: str):
     seen_names = set()
     unique_albums = []
     for album in albums:
-        name_lower = album["name"].lower()
+        name_val = str(album.get("name", ""))
+        name_lower = name_val.lower()
         if name_lower not in seen_names:
             seen_names.add(name_lower)
             unique_albums.append(album)
 
-    # Limit to first 15 studio albums
-    return unique_albums[:15]
+    # Limit to first 25 studio albums & EPs
+    return [x for i, x in enumerate(unique_albums) if i < 25]

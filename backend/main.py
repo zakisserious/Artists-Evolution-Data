@@ -43,23 +43,32 @@ async def analyze_artist(artist: Optional[str] = None, artist_id: Optional[str] 
         async with httpx.AsyncClient(headers=browser_headers) as client:
             actual_artist_name = None
             
-            # 1. Resolve artist name and ID
-            if artist_id:
-                # Always look up by ID to get the canonical name from MusicBrainz
-                artist_data = await search_artist(client, artist_id, by_id=True)
-                if not artist_data:
+            # 1. Resolve artist name and ID and fetch url-rels
+            if not artist_id:
+                artist_search_data = await search_artist(client, artist)
+                if not artist_search_data:
                     raise HTTPException(status_code=404, detail="Artist not found on MusicBrainz")
-                actual_artist_name = artist_data.get("name", "Unknown Artist")
-            else:
-                artist_data = await search_artist(client, artist)
-                if not artist_data:
-                    raise HTTPException(status_code=404, detail="Artist not found on MusicBrainz")
-                artist_id = artist_data["id"]
-                actual_artist_name = artist_data["name"]
+                artist_id = artist_search_data["id"]
+                
+            artist_data = await search_artist(client, artist_id, by_id=True)
+            if not artist_data:
+                raise HTTPException(status_code=404, detail="Artist not found on MusicBrainz")
+                
+            actual_artist_name = artist_data.get("name", "Unknown Artist")
+            
+            # Extract official artist image from MusicBrainz Wikimedia associations
+            artist_image = None
+            for rel in artist_data.get("relations", []):
+                if rel.get("type") == "image":
+                    url = rel.get("url", {}).get("resource", "")
+                    if "commons.wikimedia.org/wiki/File:" in url:
+                        filename = url.split("File:")[-1]
+                        # Special:FilePath directly serves the raw image data without scraping
+                        artist_image = f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename}?width=600"
+                        break
             
             # 2. Fetch albums (Removed broken Last.fm artist image call)
             albums = await fetch_albums(client, artist_id)
-            artist_image = None
 
             if not albums:
                 raise HTTPException(status_code=404, detail="No albums found for artist")
