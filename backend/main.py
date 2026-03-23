@@ -57,18 +57,28 @@ async def analyze_artist(artist: Optional[str] = None, artist_id: Optional[str] 
                 artist_id = artist_data["id"]
                 actual_artist_name = artist_data["name"]
             
-            # 2. Fetch albums and artist image concurrently
-            albums_task = fetch_albums(client, artist_id)
-            image_task = get_artist_image(client, actual_artist_name)
-            albums, artist_image = await asyncio.gather(albums_task, image_task)
+            # 2. Fetch albums (Removed broken Last.fm artist image call)
+            albums = await fetch_albums(client, artist_id)
+            artist_image = None
 
             if not albums:
                 raise HTTPException(status_code=404, detail="No albums found for artist")
                 
-            # 3. Fetch Deezer popularity for each album concurrently
+            # 3. Fetch Last.fm popularity for each album concurrently
             tasks = [enrich_album_with_popularity(client, actual_artist_name, album) for album in albums]
             enriched_albums = await asyncio.gather(*tasks)
             
+            # Normalize popularity to a clean 0-100 scale
+            max_pop = max((a.get("avg_popularity", 0) for a in enriched_albums), default=0)
+            if max_pop > 0:
+                for a in enriched_albums:
+                    a["avg_popularity"] = int((a.get("avg_popularity", 0) / max_pop) * 100)
+            
+            # Use the most popular album's cover as the artist image fallback
+            if not artist_image and enriched_albums:
+                best_album = max(enriched_albums, key=lambda x: x.get("avg_popularity", 0))
+                artist_image = best_album.get("cover_url")
+                
             # 4. Compute Growth Rate, Detect Breakout & Phases
             analysis_result = compute_analysis(enriched_albums)
             
@@ -102,15 +112,8 @@ async def search_artists_endpoint(q: str):
         async with httpx.AsyncClient(headers=browser_headers) as client:
             from services.musicbrainz import search_artists_list
             results = await search_artists_list(client, q)
-            # Add artist images from deezer as an enrichment step
-            from services.deezer import get_artist_image
-            
-            # Fetch images concurrently for the top results
-            tasks = [get_artist_image(client, r["name"]) for r in results]
-            images = await asyncio.gather(*tasks)
-            
-            for i, res in enumerate(results):
-                res["image_url"] = images[i]
+            for res in results:
+                res["image_url"] = None
                 
             return {"artists": results}
     except Exception as e:
