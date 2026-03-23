@@ -1,16 +1,22 @@
 import httpx
+import re
 
 LASTFM_API_KEY = "b25b959554ed76058ac220b7b2e0a026"
 BASE_URL = "http://ws.audioscrobbler.com/2.0/"
 
-async def enrich_album_with_popularity(client: httpx.AsyncClient, artist_name: str, album: dict):
-    # Search album on Last.fm
+def normalize_title(title: str) -> str:
+    # Strip everything except alphanumeric, convert to lowercase for fuzzy matching
+    # E.g., "CALL ME IF YOU GET LOST: The Estate Sale" -> "callmeifyougetlosttheestatesale"
+    return re.sub(r'[^a-zA-Z0-9]', '', title).lower()
+
+async def get_artist_top_albums(client: httpx.AsyncClient, artist_name: str):
+    """Fetches the top 50 albums from Last.fm in ONE single rapid API call"""
     params = {
-        "method": "album.getinfo",
+        "method": "artist.gettopalbums",
         "api_key": LASTFM_API_KEY,
         "artist": artist_name,
-        "album": album["name"],
-        "format": "json"
+        "format": "json",
+        "limit": 100
     }
     
     try:
@@ -18,86 +24,64 @@ async def enrich_album_with_popularity(client: httpx.AsyncClient, artist_name: s
         response.raise_for_status()
         data = response.json()
         
-        if not isinstance(data, dict) or "error" in data or "album" not in data:
-            album["avg_popularity"] = 0
-            album["cover_url"] = None
-            return album
+        if not isinstance(data, dict) or "error" in data or "topalbums" not in data:
+            return []
             
-        album_data = data["album"]
-        if not isinstance(album_data, dict):
-            album["avg_popularity"] = 0
-            album["cover_url"] = None
-            return album
-        
-        # Parse Popularity using Last.fm Playcount with ultimate safety
-        playcount_raw = album_data.get("playcount")
-        try:
-            playcount = int(float(playcount_raw)) if playcount_raw else 0
-        except (ValueError, TypeError):
-            playcount = 0
+        album_list = data["topalbums"].get("album", [])
+        if not isinstance(album_list, list):
+            album_list = [album_list] if isinstance(album_list, dict) else []
             
-        album["avg_popularity"] = playcount
-        
-        # Parse Cover Art
-        raw_images = album_data.get("image", [])
-        if isinstance(raw_images, dict):
-            images = [raw_images]
-        elif isinstance(raw_images, list):
-            images = raw_images
-        else:
-            images = []
-            
-        cover_url = None
-        for img in reversed(images):
-            if isinstance(img, dict) and img.get("#text"):
-                cover_url = img.get("#text")
-                break
+        parsed_albums = []
+        for alb in album_list:
+            if not isinstance(alb, dict):
+                continue
                 
-        album["cover_url"] = cover_url
+            name = alb.get("name", "")
+            playcount_raw = alb.get("playcount", 0)
+            try:
+                playcount = int(float(playcount_raw)) if playcount_raw else 0
+            except (ValueError, TypeError):
+                playcount = 0
+                
+            # Extract Album Cover
+            raw_images = alb.get("image", [])
+            images = [raw_images] if isinstance(raw_images, dict) else (raw_images if isinstance(raw_images, list) else [])
+            cover_url = None
+            for img in reversed(images):
+                if isinstance(img, dict) and img.get("#text"):
+                    cover_url = img.get("#text")
+                    break
+                    
+            parsed_albums.append({
+                "name": name,
+                "normalized_name": normalize_title(name),
+                "playcount": playcount,
+                "cover_url": cover_url
+            })
             
+        return parsed_albums
     except Exception as e:
-        print(f"Error enriching album {album['name']}: {type(e).__name__} - {repr(e)}")
-        album["avg_popularity"] = 0
-        album["cover_url"] = None
-        
-    return album
+        print(f"Error fetching top albums for {artist_name}: {type(e).__name__} - {repr(e)}")
+        return []
 
-
-async def get_artist_image(client: httpx.AsyncClient, artist_name: str):
+async def get_itunes_artist_image(client: httpx.AsyncClient, artist_name: str):
+    """Uses iTunes blazing fast unthrottled API to fetch high-res artist search images"""
+    url = "https://itunes.apple.com/search"
     params = {
-        "method": "artist.getinfo",
-        "api_key": LASTFM_API_KEY,
-        "artist": artist_name,
-        "format": "json"
+        "term": artist_name,
+        "entity": "album",
+        "limit": 1
     }
-    
     try:
-        response = await client.get(BASE_URL, params=params)
+        response = await client.get(url, params=params)
         response.raise_for_status()
         data = response.json()
-        
-        if not isinstance(data, dict) or "error" in data or "artist" not in data:
-            return None
-            
-        artist_data = data["artist"]
-        if not isinstance(artist_data, dict):
-            return None
-            
-        raw_images = artist_data.get("image", [])
-        if isinstance(raw_images, dict):
-            images = [raw_images]
-        elif isinstance(raw_images, list):
-            images = raw_images
-        else:
-            images = []
-        
-        for img in reversed(images):
-            if isinstance(img, dict) and img.get("#text"):
-                url = img.get("#text")
-                if url and "2a96cbd8b46e442fc41c2b86b821562f" not in url:
-                    return url
-                    
+        results = data.get("results", [])
+        if results:
+            artwork = results[0].get("artworkUrl100")
+            if artwork:
+                return artwork.replace("100x100bb", "600x600bb")
         return None
     except Exception as e:
-        print(f"Error fetching artist image for {artist_name}: {type(e).__name__} - {repr(e)}")
+        print(f"Error fetching iTunes image for {artist_name}: {e}")
         return None

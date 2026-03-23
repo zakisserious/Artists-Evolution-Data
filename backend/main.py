@@ -1,16 +1,16 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
-import httpx
 import asyncio
+import httpx
 import time
 
-from services.musicbrainz import search_artist, fetch_albums
-from services.deezer import enrich_album_with_popularity
+from services.musicbrainz import search_artist, fetch_albums, search_artists_list
+from services.deezer import get_artist_top_albums, normalize_title, get_itunes_artist_image
 from services.analysis import compute_analysis
 
-app = FastAPI(title="Artist Evolution Analyzer")
+app = FastAPI()
 
+# Enable CORS for all origins (or specify your frontend URL)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,28 +19,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Simple in-memory cache
-# Format: { "artist_name_lower": { "timestamp": float, "data": dict } }
+# Simple in-memory cache to prevent spamming APIs (Key: artist name, Value: (timestamp, data))
 cache = {}
-CACHE_TTL = 3600  # 1 hour in seconds
+CACHE_TTL = 3600  # 1 hour
 
 @app.get("/analyze")
-async def analyze_artist(artist: Optional[str] = None, artist_id: Optional[str] = None):
+async def analyze_artist(artist: str = Query(None), artist_id: str = Query(None)):
     if not artist and not artist_id:
-        raise HTTPException(status_code=400, detail="Must provide artist name or artist_id")
+        raise HTTPException(status_code=400, detail="Must provide either 'artist' or 'artist_id'")
         
-    cache_key = artist_id if artist_id else (artist.lower().strip() if artist else "")
+    cache_key = f"{artist_id or artist}"
     
-    # Check cache
     if cache_key in cache:
-        cached_item = cache[cache_key]
-        if time.time() - cached_item["timestamp"] < CACHE_TTL:
-            return cached_item["data"]
-            
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+
     try:
-        from services.deezer import get_artist_image
         browser_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        async with httpx.AsyncClient(headers=browser_headers) as client:
+        async with httpx.AsyncClient(headers=browser_headers, timeout=15.0) as client:
             actual_artist_name = None
             
             # 1. Resolve artist name and ID and fetch url-rels
@@ -59,7 +56,7 @@ async def analyze_artist(artist: Optional[str] = None, artist_id: Optional[str] 
             # Extract official artist image from MusicBrainz Wikimedia associations
             artist_image = None
             for rel in artist_data.get("relations", []):
-                if rel.get("type") == "image":
+                if rel.get("type") in ["image", "wikidata"]:
                     url = rel.get("url", {}).get("resource", "")
                     if "commons.wikimedia.org/wiki/File:" in url:
                         filename = url.split("File:")[-1]
@@ -67,29 +64,51 @@ async def analyze_artist(artist: Optional[str] = None, artist_id: Optional[str] 
                         artist_image = f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename}?width=600"
                         break
             
-            # 2. Fetch albums (Removed broken Last.fm artist image call)
+            # 2. Fetch albums 
             albums = await fetch_albums(client, artist_id)
 
             if not albums:
                 raise HTTPException(status_code=404, detail="No albums found for artist")
                 
-            # 3. Fetch Last.fm popularity for each album concurrently
-            tasks = [enrich_album_with_popularity(client, actual_artist_name, album) for album in albums]
-            enriched_albums = await asyncio.gather(*tasks)
+            # 3. Bulk fetch Last.fm popularity using O(1) matching strategy
+            top_albums_data = await get_artist_top_albums(client, actual_artist_name)
+            
+            # Create speedy lookup map
+            lastfm_map = {alb["normalized_name"]: alb for alb in top_albums_data}
+            
+            for album in albums:
+                norm_mb_name = normalize_title(album["name"])
+                
+                # Direct fuzzy match
+                matched_lf_album = lastfm_map.get(norm_mb_name)
+                
+                # Substring fallback if platforms tag editions differently
+                if not matched_lf_album:
+                    for lf_norm_name, lf_data in lastfm_map.items():
+                        if len(norm_mb_name) > 3 and (norm_mb_name in lf_norm_name or lf_norm_name in norm_mb_name):
+                            matched_lf_album = lf_data
+                            break
+                            
+                if matched_lf_album:
+                    album["avg_popularity"] = matched_lf_album["playcount"]
+                    album["cover_url"] = matched_lf_album["cover_url"]
+                else:
+                    album["avg_popularity"] = 0
+                    album["cover_url"] = None
             
             # Normalize popularity to a clean 0-100 scale
-            max_pop = max((a.get("avg_popularity", 0) for a in enriched_albums), default=0)
+            max_pop = max((a.get("avg_popularity", 0) for a in albums), default=0)
             if max_pop > 0:
-                for a in enriched_albums:
+                for a in albums:
                     a["avg_popularity"] = int((a.get("avg_popularity", 0) / max_pop) * 100)
             
             # Use the most popular album's cover as the artist image fallback
-            if not artist_image and enriched_albums:
-                best_album = max(enriched_albums, key=lambda x: x.get("avg_popularity", 0))
+            if not artist_image and albums:
+                best_album = max(albums, key=lambda x: x.get("avg_popularity", 0))
                 artist_image = best_album.get("cover_url")
                 
             # 4. Compute Growth Rate, Detect Breakout & Phases
-            analysis_result = compute_analysis(enriched_albums)
+            analysis_result = compute_analysis(albums)
             
             response_data = {
                 "artist": actual_artist_name,
@@ -104,6 +123,7 @@ async def analyze_artist(artist: Optional[str] = None, artist_id: Optional[str] 
             }
             
             return response_data
+            
     except HTTPException:
         raise
     except httpx.HTTPError as e:
@@ -119,22 +139,16 @@ async def search_artists_endpoint(q: str):
     try:
         browser_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         async with httpx.AsyncClient(headers=browser_headers) as client:
-            from services.musicbrainz import search_artists_list
             results = await search_artists_list(client, q)
-            for res in results:
-                res["image_url"] = None
+            
+            # Add pristine fast artist images using iTunes API search
+            tasks = [get_itunes_artist_image(client, r["name"]) for r in results]
+            images = await asyncio.gather(*tasks)
+            
+            for i, res in enumerate(results):
+                res["image_url"] = images[i]
                 
             return {"artists": results}
     except Exception as e:
         print(f"Search error: {e}")
         return {"artists": []}
-    except HTTPException:
-        raise
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"External API error: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Artist Evolution Analyzer API. Use /analyze?artist={name}"}
