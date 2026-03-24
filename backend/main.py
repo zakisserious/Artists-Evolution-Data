@@ -40,7 +40,7 @@ async def analyze_artist(artist: str = Query(None), artist_id: str = Query(None)
         async with httpx.AsyncClient(headers=browser_headers, timeout=15.0) as client:
             actual_artist_name = None
             
-            # 1. Resolve artist name and ID and fetch url-rels
+            # 1. Resolve artist name and ID
             if not artist_id:
                 artist_search_data = await search_artist(client, artist)
                 if not artist_search_data:
@@ -53,16 +53,8 @@ async def analyze_artist(artist: str = Query(None), artist_id: str = Query(None)
                 
             actual_artist_name = artist_data.get("name", "Unknown Artist")
             
-            # Extract official artist image from MusicBrainz Wikimedia associations
-            artist_image = None
-            for rel in artist_data.get("relations", []):
-                if rel.get("type") in ["image", "wikidata"]:
-                    url = rel.get("url", {}).get("resource", "")
-                    if "commons.wikimedia.org/wiki/File:" in url:
-                        filename = url.split("File:")[-1]
-                        # Special:FilePath directly serves the raw image data without scraping
-                        artist_image = f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename}?width=600"
-                        break
+            # Use identical iTunes image fallback as search bar per user mandate
+            artist_image = await get_itunes_artist_image(client, actual_artist_name)
             
             # 2. Fetch albums 
             albums = await fetch_albums(client, artist_id)
@@ -76,6 +68,7 @@ async def analyze_artist(artist: str = Query(None), artist_id: str = Query(None)
             # Create speedy lookup map
             lastfm_map = {alb["normalized_name"]: alb for alb in top_albums_data}
             
+            current_year = 2026
             for album in albums:
                 norm_mb_name = normalize_title(album["name"])
                 
@@ -90,23 +83,26 @@ async def analyze_artist(artist: str = Query(None), artist_id: str = Query(None)
                             break
                             
                 if matched_lf_album:
-                    album["avg_popularity"] = matched_lf_album["playcount"]
+                    raw_playcount = matched_lf_album["playcount"]
                     album["cover_url"] = matched_lf_album["cover_url"]
                 else:
-                    album["avg_popularity"] = 0
+                    raw_playcount = 0
                     album["cover_url"] = None
+                    
+                # Calculate Stream Velocity (Plays per Year) to neutralize cumulative bias of older albums
+                release_year = album.get("year", current_year)
+                age_in_years = max(1, current_year - release_year)
+                album["velocity"] = raw_playcount / age_in_years
             
-            # Normalize popularity to a clean 0-100 scale
-            max_pop = max((a.get("avg_popularity", 0) for a in albums), default=0)
-            if max_pop > 0:
+            # Normalize Velocity to a clean 0-100 Hype Index (avg_popularity)
+            max_velocity = max((a.get("velocity", 0) for a in albums), default=0)
+            if max_velocity > 0:
                 for a in albums:
-                    a["avg_popularity"] = int((a.get("avg_popularity", 0) / max_pop) * 100)
-            
-            # Use the most popular album's cover as the artist image fallback
-            if not artist_image and albums:
-                best_album = max(albums, key=lambda x: x.get("avg_popularity", 0))
-                artist_image = best_album.get("cover_url")
-                
+                    a["avg_popularity"] = int((a.get("velocity", 0) / max_velocity) * 100)
+            else:
+                for a in albums:
+                    a["avg_popularity"] = 0
+                    
             # 4. Compute Growth Rate, Detect Breakout & Phases
             analysis_result = compute_analysis(albums)
             
