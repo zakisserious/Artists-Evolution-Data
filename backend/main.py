@@ -10,6 +10,10 @@ from services.analysis import compute_analysis
 
 app = FastAPI()
 
+@app.get("/ping")
+def ping():
+    return {"status": "ok", "message": "pong"}
+
 # Enable CORS for all origins (or specify your frontend URL)
 app.add_middleware(
     CORSMiddleware,

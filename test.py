@@ -1,0 +1,1 @@
+import asyncio, httpx; from backend.services.deezer import enrich_album_with_popularity; async def run(): async with httpx.AsyncClient() as c: await enrich_album_with_popularity(c, 'Tyler The Creator', {'name': 'DINOSAUR'}); asyncio.run(run())

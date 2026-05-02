@@ -1,0 +1,10 @@
+
+
+
+{
+ "resultCount":1,
+ "results": [
+{"wrapperType":"collection", "collectionType":"Album", "artistId":160926, "collectionId":46592114, "amgArtistId":3876, "artistName":"Ray Charles", "collectionName":"Ray Charles", "collectionCensoredName":"Ray Charles", "artistViewUrl":"https://music.apple.com/us/artist/ray-charles/160926?uo=4", "collectionViewUrl":"https://music.apple.com/us/album/ray-charles/46592114?uo=4", "artworkUrl60":"https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c5/9a/76/c59a7634-222b-8e9c-b7bb-e21b03689857/s06.qpwudujs.jpg/60x60bb.jpg", "artworkUrl100":"https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c5/9a/76/c59a7634-222b-8e9c-b7bb-e21b03689857/s06.qpwudujs.jpg/100x100bb.jpg", "collectionPrice":10.99, "collectionExplicitness":"notExplicit", "trackCount":14, "copyright":"℗ 2005 Atlantic Recording Corp. Manufactured & Marketed by Warner Strategic Marketing", "country":"USA", "currency":"USD", "releaseDate":"1957-06-01T07:00:00Z", "primaryGenreName":"R&B/Soul"}]
+}
+
+
